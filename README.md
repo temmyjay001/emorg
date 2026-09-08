@@ -1,6 +1,6 @@
 # emorg
 
-[![CI](https://github.com/temmyjay001/engineering-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/temmyjay001/engineering-manager/actions/workflows/ci.yml)
+[![CI](https://github.com/temmyjay001/emorg/actions/workflows/ci.yml/badge.svg)](https://github.com/temmyjay001/emorg/actions/workflows/ci.yml)
 
 A local engineering org run by isolated AI agents. Each role is a separate, locked-down agent session with its own system prompt, tool set, and model. The work moves through a real ticket lifecycle with gates that code cannot skip: a ticket reaches READY_TO_LAND only after an independent review and UAT both pass, then enters a serialized landing queue before it can reach DONE.
 
@@ -49,7 +49,7 @@ em doctor                  # verify the environment
 To run from a clone instead:
 
 ```bash
-git clone https://github.com/temmyjay001/engineering-manager.git && cd engineering-manager
+git clone https://github.com/temmyjay001/emorg.git && cd emorg
 npm install && npm run build
 npm link                   # puts the em binary on your PATH
 ```

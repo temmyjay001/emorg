@@ -63,11 +63,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/temmyjay001/engineering-manager.git"
+    "url": "git+https://github.com/temmyjay001/emorg.git"
   },
   "homepage": "https://emorg.uncu.me",
   "bugs": {
-    "url": "https://github.com/temmyjay001/engineering-manager/issues"
+    "url": "https://github.com/temmyjay001/emorg/issues"
   },
   "keywords": [
     "ai-agents",
