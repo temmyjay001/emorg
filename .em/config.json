@@ -1,5 +1,5 @@
 {
-  "runCommand": "WEB_PORT=4799 npx tsx src/web/main.ts",
+  "runCommand": "npm run ui:build && WEB_PORT=4799 npx tsx src/web/main.ts",
   "appUrl": "http://localhost:4799",
   "verifyCommand": "npm install --no-audit --no-fund >/dev/null 2>&1 && npx vitest run",
   "mergeStrategy": "merge",
@@ -9,7 +9,7 @@
   "maxParallelSubtickets": 2,
   "maxConcurrentAgents": 2,
   "maxAttempts": 3,
-  "maxTicketBudgetUsd": 12,
+  "maxTicketBudgetUsd": 20,
   "monthlyBudgetUsd": 100,
   "meetingModel": "claude-sonnet-5",
   "meetingMaxTurns": null,
