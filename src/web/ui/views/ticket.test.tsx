@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TicketDetail } from '@/lib/types';
+import type { RunEvent, TicketDetail } from '@/lib/types';
 import { TicketView } from './ticket';
 
 const fetchTicketMock = vi.fn();
@@ -13,6 +13,7 @@ const setTicketPriorityMock = vi.fn();
 const setTicketLabelsMock = vi.fn();
 const addTicketRelationMock = vi.fn();
 const removeTicketRelationMock = vi.fn();
+const runStreamMock = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   fetchTicket: (...args: unknown[]) => fetchTicketMock(...args),
@@ -28,7 +29,7 @@ vi.mock('@/lib/api', () => ({
   approveTicket: vi.fn(),
   rejectTicket: vi.fn(),
   unblockTicket: vi.fn(),
-  runStream: vi.fn(),
+  runStream: (...args: unknown[]) => runStreamMock(...args),
   eventsUrl: () => '/api/projects/p/events',
 }));
 
@@ -36,6 +37,19 @@ class FakeEventSource {
   onmessage: ((ev: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   close() {}
+}
+
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}
+
+async function* eventStream(events: RunEvent[]): AsyncGenerator<RunEvent> {
+  for (const event of events) yield event;
+}
+
+async function* pendingStream(): AsyncGenerator<RunEvent> {
+  await new Promise(() => {});
+  yield { type: 'log', line: 'unreachable' };
 }
 
 beforeEach(() => {
@@ -49,6 +63,7 @@ beforeEach(() => {
   setTicketLabelsMock.mockReset();
   addTicketRelationMock.mockReset();
   removeTicketRelationMock.mockReset();
+  runStreamMock.mockReset();
   fetchBoardMock.mockResolvedValue({ epics: [], standaloneTickets: [], pipeline: [] });
   fetchLabelsMock.mockResolvedValue([]);
   (globalThis as unknown as { EventSource: unknown }).EventSource = FakeEventSource;
@@ -432,5 +447,97 @@ describe('TicketView relations manager', () => {
     fireEvent.click(screen.getByRole('button', { name: /add relation/i }));
     expect(await screen.findByText('Already blocks T-2')).toBeTruthy();
     expect(addTicketRelationMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('TicketView Land button', () => {
+  it('shows a Land button for a Ready to land ticket, with no parked-reason note beside it', async () => {
+    fetchTicketMock.mockResolvedValue(
+      draftTicket({
+        status: 'READY_TO_LAND',
+        transitions: [
+          { id: 1, fromState: 'UAT', toState: 'READY_TO_LAND', role: 'uat', verdict: 'PASS', note: 'ready to land note', createdAt: '2024-01-01T00:00:00.000Z' },
+        ],
+      }),
+    );
+    render(<TicketView projectId="p" keyId="T-1" />);
+    const button = await screen.findByRole('button', { name: /land/i });
+    expect(button.parentElement?.textContent?.trim()).toBe('Land');
+  });
+
+  it('shows a Land button for a Needs integration ticket, with the last transition note beside it', async () => {
+    fetchTicketMock.mockResolvedValue(
+      draftTicket({
+        status: 'NEEDS_INTEGRATION',
+        transitions: [
+          { id: 1, fromState: 'READY_TO_LAND', toState: 'NEEDS_INTEGRATION', role: 'integration', verdict: 'FAIL', note: 'merging main conflicts', createdAt: '2024-01-01T00:00:00.000Z' },
+        ],
+      }),
+    );
+    render(<TicketView projectId="p" keyId="T-1" />);
+    const button = await screen.findByRole('button', { name: /land/i });
+    expect(button.parentElement?.textContent).toContain('merging main conflicts');
+  });
+
+  it('shows no Land button for a ticket in any other status', async () => {
+    fetchTicketMock.mockResolvedValue(draftTicket({ status: 'BACKLOG' }));
+    render(<TicketView projectId="p" keyId="T-1" />);
+    await screen.findByText('Request');
+    expect(screen.queryByRole('button', { name: /land/i })).toBeNull();
+  });
+
+  it('opens the run panel and streams landing log lines when Land is clicked', async () => {
+    fetchTicketMock.mockResolvedValue(draftTicket({ status: 'NEEDS_INTEGRATION', transitions: [] }));
+    runStreamMock.mockReturnValue(eventStream([{ type: 'log', line: 'landing EM-1...' }]));
+    render(<TicketView projectId="p" keyId="T-1" />);
+    fireEvent.click(await screen.findByRole('button', { name: /land/i }));
+    expect(runStreamMock).toHaveBeenCalledWith('p', 'tickets', 'T-1', 'land');
+    expect(await screen.findByText('landing EM-1...')).toBeTruthy();
+  });
+
+  it('disables the Land button while landing is in progress', async () => {
+    fetchTicketMock.mockResolvedValue(draftTicket({ status: 'NEEDS_INTEGRATION', transitions: [] }));
+    runStreamMock.mockReturnValue(pendingStream());
+    render(<TicketView projectId="p" keyId="T-1" />);
+    const button = (await screen.findByRole('button', { name: /land/i })) as HTMLButtonElement;
+    fireEvent.click(button);
+    await waitFor(() => expect(button.disabled).toBe(true));
+  });
+
+  it('updates the ticket to Done, with no manual refresh, when landing succeeds outright', async () => {
+    fetchTicketMock
+      .mockResolvedValueOnce(draftTicket({ status: 'READY_TO_LAND', transitions: [] }))
+      .mockResolvedValueOnce(draftTicket({ status: 'DONE', transitions: [] }));
+    runStreamMock.mockReturnValue(eventStream([{ type: 'done', status: 'DONE' }]));
+    render(<TicketView projectId="p" keyId="T-1" />);
+    fireEvent.click(await screen.findByRole('button', { name: /land/i }));
+    expect(await screen.findByText('Done')).toBeTruthy();
+    expect(fetchTicketMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows Needs integration with the new parked reason when landing cannot complete again', async () => {
+    fetchTicketMock
+      .mockResolvedValueOnce(
+        draftTicket({
+          status: 'NEEDS_INTEGRATION',
+          transitions: [
+            { id: 1, fromState: 'READY_TO_LAND', toState: 'NEEDS_INTEGRATION', role: 'integration', verdict: 'FAIL', note: 'first parked reason', createdAt: '2024-01-01T00:00:00.000Z' },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        draftTicket({
+          status: 'NEEDS_INTEGRATION',
+          transitions: [
+            { id: 2, fromState: 'READY_TO_LAND', toState: 'NEEDS_INTEGRATION', role: 'integration', verdict: 'FAIL', note: 'second parked reason', createdAt: '2024-01-02T00:00:00.000Z' },
+          ],
+        }),
+      );
+    runStreamMock.mockReturnValue(eventStream([{ type: 'done', status: 'NEEDS_INTEGRATION' }]));
+    render(<TicketView projectId="p" keyId="T-1" />);
+    fireEvent.click(await screen.findByRole('button', { name: /land/i }));
+    await waitFor(() => expect(screen.getAllByText('second parked reason').length).toBeGreaterThan(0));
+    expect(screen.queryByText('first parked reason')).toBeNull();
+    expect(screen.getAllByText('Needs integration').length).toBeGreaterThan(0);
   });
 });

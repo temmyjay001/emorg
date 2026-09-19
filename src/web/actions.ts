@@ -1,6 +1,6 @@
 import type { ServerResponse } from 'node:http';
 import type { Ctx } from '../ctx';
-import { cancelRun, type Log, planEpic, run, runEpic, RunInProgressError } from '../orchestrator/orchestrator';
+import { cancelRun, land, type Log, planEpic, run, runEpic, RunInProgressError } from '../orchestrator/orchestrator';
 import type { ApiRouter } from './router';
 
 function beginStream(res: ServerResponse): void {
@@ -56,6 +56,15 @@ export function registerActionRoutes(router: ApiRouter): void {
       return;
     }
     await stream(res, ctx, `ticket:${ticket.key}`, (log) => run(ctx, ticket.id, log));
+  });
+
+  router.register('POST', '/tickets/:key/land', async (_req, res, ctx, params) => {
+    const ticket = ctx.store.getTicketByKey(params.key ?? '');
+    if (!ticket) {
+      sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+    await stream(res, ctx, `ticket:${ticket.key}`, (log) => land(ctx, ticket.id, log));
   });
 
   router.register('POST', '/epics/:key/run', async (_req, res, ctx, params) => {

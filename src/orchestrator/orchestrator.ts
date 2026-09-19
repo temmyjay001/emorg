@@ -322,6 +322,30 @@ export async function landRun(ctx: Ctx, ticketId: number, log: Log = noop): Prom
   );
 }
 
+export async function land(ctx: Ctx, ticketId: number, log: Log = noop): Promise<LandResult> {
+  const { store } = ctx;
+  const ticket = store.getTicketById(ticketId);
+  if (!ticket) throw new Error(`Ticket ${ticketId} not found`);
+  if (ticket.status !== 'READY_TO_LAND' && ticket.status !== 'NEEDS_INTEGRATION') {
+    return {
+      status: ticket.status,
+      moved: false,
+      message: `${ticket.key} is ${ticket.status}; only READY_TO_LAND or NEEDS_INTEGRATION tickets can land`,
+    };
+  }
+  if (ticket.status === 'NEEDS_INTEGRATION') {
+    store.transition({
+      ticketId: ticket.id,
+      from: ticket.status,
+      to: 'READY_TO_LAND',
+      role: null,
+      verdict: null,
+      note: 'landing retried',
+    });
+  }
+  return landRun(ctx, ticketId, log);
+}
+
 async function planEpicInner(ctx: Ctx, epicId: number, log: Log): Promise<Epic> {
   const { store } = ctx;
   const epic = store.getEpicById(epicId);

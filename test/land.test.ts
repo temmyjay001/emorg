@@ -8,6 +8,7 @@ import { Store } from '../src/db/store';
 import type { Ticket } from '../src/domain/types';
 import { createWorktree, worktreePath } from '../src/git/worktree';
 import { landTicket } from '../src/orchestrator/land';
+import { land } from '../src/orchestrator/orchestrator';
 import { initProject } from '../src/project';
 
 let dir: string;
@@ -138,6 +139,67 @@ describe('landTicket', () => {
     const t = store.createTicket({ title: 'Not ready', description: 'x' });
     const res = await landTicket(ctx, t.id);
     expect(res.moved).toBe(false);
+    expect(store.getTicketById(t.id)!.status).toBe('BACKLOG');
+  });
+});
+
+describe('land (the web Land button / em land retry)', () => {
+  it('lands a READY_TO_LAND ticket directly', async () => {
+    const t = readyTicket('feature.txt', 'done\n');
+    const res = await land(ctx, t.id);
+    expect(res.status).toBe('DONE');
+    expect(store.getTicketById(t.id)!.status).toBe('DONE');
+  });
+
+  it('retries a NEEDS_INTEGRATION ticket once the worktree conflict is resolved, landing it', async () => {
+    const t = readyTicket('README.md', 'ticket version\n');
+    commitFile(dir, 'README.md', 'base version\n', 'conflicting base change');
+    const parked = await landTicket(ctx, t.id);
+    expect(parked.status).toBe('NEEDS_INTEGRATION');
+
+    const wtPath = worktreePath(ctx.project, t.key);
+    try {
+      git(wtPath, ['merge', '--no-edit', 'main']);
+    } catch {
+      /* expected conflict; resolve manually below */
+    }
+    writeFileSync(join(wtPath, 'README.md'), 'resolved\n');
+    git(wtPath, ['add', '-A']);
+    git(wtPath, ['commit', '-q', '-m', 'resolve merge conflict']);
+
+    const res = await land(ctx, t.id);
+
+    expect(res.status).toBe('DONE');
+    expect(store.getTicketById(t.id)!.status).toBe('DONE');
+    expect(git(dir, ['show', 'main:README.md'])).toBe('resolved');
+    const transitions = store.listTransitions(t.id);
+    expect(
+      transitions.some(
+        (tr) => tr.fromState === 'NEEDS_INTEGRATION' && tr.toState === 'READY_TO_LAND' && tr.note === 'landing retried',
+      ),
+    ).toBe(true);
+  });
+
+  it('parks a still-conflicting NEEDS_INTEGRATION ticket again, with an updated note', async () => {
+    const t = readyTicket('README.md', 'ticket version\n');
+    commitFile(dir, 'README.md', 'base version\n', 'conflicting base change');
+    await landTicket(ctx, t.id);
+    expect(store.getTicketById(t.id)!.status).toBe('NEEDS_INTEGRATION');
+
+    const res = await land(ctx, t.id);
+
+    expect(res.status).toBe('NEEDS_INTEGRATION');
+    expect(store.getTicketById(t.id)!.status).toBe('NEEDS_INTEGRATION');
+    const last = store.listTransitions(t.id).at(-1);
+    expect(last?.toState).toBe('NEEDS_INTEGRATION');
+    expect(last?.note).toContain('conflicts');
+  });
+
+  it('does nothing for a ticket that is neither READY_TO_LAND nor NEEDS_INTEGRATION', async () => {
+    const t = store.createTicket({ title: 'Not ready', description: 'x' });
+    const res = await land(ctx, t.id);
+    expect(res.moved).toBe(false);
+    expect(res.status).toBe('BACKLOG');
     expect(store.getTicketById(t.id)!.status).toBe('BACKLOG');
   });
 });

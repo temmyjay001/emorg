@@ -153,7 +153,7 @@ export async function* runStream(
   pid: string,
   kind: 'tickets' | 'epics',
   key: string,
-  action: 'run' | 'plan',
+  action: 'run' | 'plan' | 'land',
 ): AsyncGenerator<RunEvent> {
   const res = await fetch(`${base(pid)}/${kind}/${encodeURIComponent(key)}/${action}`, { method: 'POST' });
   if (res.status === 409) {

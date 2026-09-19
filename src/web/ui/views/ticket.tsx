@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Clock, Play, Plus, Send, X } from 'lucide-react';
+import { Bot, Check, Clock, Play, Plus, Rocket, Send, X } from 'lucide-react';
 import { BackLink } from '@/components/back-link';
 import { ArtifactContent, evidenceMeta } from '@/components/artifact';
 import { RelativeTime } from '@/components/relative-time';
@@ -466,6 +466,19 @@ function InterruptedCard({ status, onResume }: { status: TicketState; onResume: 
   );
 }
 
+function LandCard({ note, disabled, onLand }: { note: string | null; disabled: boolean; onLand: () => void }) {
+  return (
+    <Card className="border-foreground/20">
+      <CardContent className="flex flex-wrap items-center gap-3 p-4">
+        <Button disabled={disabled} onClick={onLand}>
+          <Rocket className="size-4" /> Land
+        </Button>
+        {note ? <p className="text-sm text-muted-foreground">{note}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function Decision({ ticket, onApprove, onReject }: { ticket: TicketDetail; onApprove: () => void; onReject: (fb: string) => void }) {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
@@ -671,6 +684,7 @@ export function TicketView({ projectId, keyId }: { projectId: string; keyId: str
   const { data: board } = useResource(() => fetchBoard(projectId), [projectId]);
   const { data: labelSuggestions, reload: reloadLabels } = useResource(() => fetchLabels(projectId), [projectId]);
   const [panel, setPanel] = useState<Panel>(null);
+  const [landBusy, setLandBusy] = useState(false);
   const panelActive = panel !== null;
   useChangeFeed(eventsUrl(projectId), reload, panelActive);
 
@@ -679,7 +693,16 @@ export function TicketView({ projectId, keyId }: { projectId: string; keyId: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.running]);
 
+  const finishPanel = () => {
+    setLandBusy(false);
+    reload();
+  };
+
   const startRun = () => setPanel({ driver: runStream(projectId, 'tickets', keyId, 'run') });
+  const startLand = () => {
+    setLandBusy(true);
+    setPanel({ driver: runStream(projectId, 'tickets', keyId, 'land') });
+  };
   const approve = async () => {
     await approveTicket(projectId, keyId);
     setPanel({ driver: runStream(projectId, 'tickets', keyId, 'run') });
@@ -815,6 +838,14 @@ export function TicketView({ projectId, keyId }: { projectId: string; keyId: str
                 />
               ) : null}
 
+              {data.status === 'READY_TO_LAND' || data.status === 'NEEDS_INTEGRATION' ? (
+                <LandCard
+                  note={data.status === 'NEEDS_INTEGRATION' ? (data.transitions.at(-1)?.note ?? null) : null}
+                  disabled={landBusy || data.running}
+                  onLand={startLand}
+                />
+              ) : null}
+
               {panel ? (
                 <RunPanel
                   projectId={projectId}
@@ -822,7 +853,7 @@ export function TicketView({ projectId, keyId }: { projectId: string; keyId: str
                   target={keyId}
                   driver={panel === 'reattach' ? null : panel.driver}
                   startedAt={data.runStartedAt}
-                  onFinished={reload}
+                  onFinished={finishPanel}
                 />
               ) : null}
 
