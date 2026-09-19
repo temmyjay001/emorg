@@ -1,6 +1,6 @@
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { handleJiraWebhook, parseWebhookEvent } from '../jira/bridge';
+import { handleJiraWebhook, parseWebhookEvent, secretMatches } from '../jira/bridge';
 import { JiraClient } from '../jira/client';
 import { run } from '../orchestrator/orchestrator';
 import { openProject } from '../project';
@@ -56,8 +56,7 @@ async function handleJiraWebhookRequest(manager: ProjectManager, req: IncomingMe
     const ctx = manager.ctxFor(entry.id);
     const cfg = ctx?.project.config.jira;
     if (!ctx || !cfg || !projectKey || !cfg.projectKeys.includes(projectKey)) continue;
-    const secret = process.env[cfg.webhookSecretEnv];
-    if (!secret || url.searchParams.get('secret') !== secret) {
+    if (!secretMatches(process.env[cfg.webhookSecretEnv], url.searchParams.get('secret'))) {
       sendJson(res, 401, { error: 'bad secret' });
       return;
     }

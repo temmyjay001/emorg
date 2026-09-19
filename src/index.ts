@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -15,6 +16,7 @@ import { epicLeadTimeMs, humanDuration, ticketLeadTimeMs } from './domain/timing
 import type { ArtifactKind, Ticket, TicketState } from './domain/types';
 import { assertGitRepo, removeWorktree, worktreePath } from './git/worktree';
 import { agentParticipants } from './meetings';
+import { JiraClient } from './jira/client';
 import { availableMemory } from './mem';
 import {
   cancelRun,
@@ -28,7 +30,7 @@ import {
   RunInProgressError,
 } from './orchestrator/orchestrator';
 import { openBlockerWarning } from './orchestrator/schedule';
-import { initProject, openProject, type Project } from './project';
+import { initProject, openProject, parseEmConfig, saveConfig, type Project } from './project';
 import { serveMcpStdio } from './mcp/server';
 import { listProjects, registerProject } from './registry';
 import { sweepOrphans } from './sweep';
@@ -52,6 +54,8 @@ project
   em projects                 list projects registered with the dashboard
   em web [--port <n>]         start the web dashboard (serves every registered project)
   em mcp                      run em as an MCP server on stdio (for Claude Code, Zed, ...)
+  em jira connect --site <url> --email <e> --projects <K1,K2> [--public-url <url>]
+                              wire a Jira project to this board (assign issues to emorg)
 
 tickets
   em new "<request>"          create a standalone ticket
@@ -189,6 +193,11 @@ async function main(): Promise<void> {
           version: { type: 'boolean', short: 'V' },
           json: { type: 'boolean' },
           port: { type: 'string' },
+          site: { type: 'string' },
+          email: { type: 'string' },
+          projects: { type: 'string' },
+          label: { type: 'string' },
+          'public-url': { type: 'string' },
           days: { type: 'string' },
           all: { type: 'boolean' },
         },
@@ -338,6 +347,64 @@ async function main(): Promise<void> {
         const reason = rest.slice(1).join(' ') || 'blocked';
         store.transition({ ticketId: t.id, from: t.status, to: 'BLOCKED', role: null, verdict: 'FAIL', note: reason });
         console.log(`${t.key} -> BLOCKED (${reason})`);
+        break;
+      }
+
+      case 'jira': {
+        if (rest[0] !== 'connect') fail('usage: em jira connect --site <url> --email <e> --projects <K1,K2> [--public-url <url>]', 2);
+        const site = values.site;
+        const email = values.email;
+        const projects = values.projects;
+        if (!site || !email || !projects) fail('em jira connect needs --site, --email, and --projects', 2);
+        const projectKeys = projects.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean);
+        const token = process.env.JIRA_API_TOKEN;
+        if (!token) fail('set JIRA_API_TOKEN in the project .env first (an Atlassian API token for the connecting account)', 2);
+        const client = new JiraClient({ site, email, token });
+        let accountId: string;
+        try {
+          const me = await client.myself();
+          accountId = me.accountId;
+          console.log(`Authenticated as ${me.displayName}.`);
+        } catch (err) {
+          fail(`Jira authentication failed: ${(err as Error).message}`);
+        }
+        let secret = process.env.JIRA_WEBHOOK_SECRET;
+        if (!secret) {
+          secret = randomBytes(24).toString('hex');
+          const envPath = join(ctx.project.root, '.env');
+          const existing = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+          writeFileSync(envPath, `${existing}${existing.endsWith('\n') || existing === '' ? '' : '\n'}JIRA_WEBHOOK_SECRET=${secret}\n`);
+          process.env.JIRA_WEBHOOK_SECRET = secret;
+          console.log('Generated JIRA_WEBHOOK_SECRET and saved it to .env.');
+        }
+        const jira = {
+          site,
+          email,
+          tokenEnv: 'JIRA_API_TOKEN',
+          webhookSecretEnv: 'JIRA_WEBHOOK_SECRET',
+          projectKeys,
+          triggerLabel: values.label ?? 'emorg',
+          triggerAccountId: accountId,
+          statusMap: ctx.project.config.jira?.statusMap ?? {},
+          evidenceUpload: true,
+        };
+        const parsedCfg = parseEmConfig({ ...JSON.parse(readFileSync(ctx.project.configPath, 'utf8')), jira });
+        if ('error' in parsedCfg) fail(`config invalid: ${parsedCfg.error}`);
+        saveConfig(ctx.project, parsedCfg.config);
+        console.log(`Connected ${projectKeys.join(', ')} on ${site} (trigger: assignee ${accountId} or label "${jira.triggerLabel}").`);
+        const publicUrl = values['public-url'];
+        if (publicUrl) {
+          try {
+            await client.registerWebhook(publicUrl, projectKeys, secret);
+            console.log(`Webhook registered: ${publicUrl.replace(/\/+$/, '')}/webhooks/jira`);
+          } catch (err) {
+            console.error(`Automatic webhook registration failed (${(err as Error).message}).`);
+            console.error(`Register it manually in Jira settings: ${publicUrl.replace(/\/+$/, '')}/webhooks/jira?secret=<JIRA_WEBHOOK_SECRET>, events: issue created, issue updated, comment created.`);
+          }
+        } else {
+          console.log('No --public-url given: register the webhook in Jira settings pointing at <your public em web URL>/webhooks/jira?secret=<JIRA_WEBHOOK_SECRET>.');
+        }
+        console.log('Start em web (and expose it publicly or via a tunnel), then assign an issue to the emorg account to begin.');
         break;
       }
 

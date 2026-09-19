@@ -91,6 +91,23 @@ export class JiraClient {
     return (raw.transitions ?? []).map((t) => ({ id: String(t.id), toStatus: String(t.to?.name ?? '') }));
   }
 
+  async myself(): Promise<{ accountId: string; displayName: string }> {
+    const raw = (await this.request('GET', '/rest/api/2/myself')) as Record<string, unknown>;
+    return { accountId: String(raw.accountId ?? ''), displayName: String(raw.displayName ?? '') };
+  }
+
+  async registerWebhook(publicUrl: string, projectKeys: string[], secret: string): Promise<string> {
+    const url = `${publicUrl.replace(/\/+$/, '')}/webhooks/jira?secret=${encodeURIComponent(secret)}`;
+    const raw = (await this.request('POST', '/rest/webhooks/1.0/webhook', {
+      name: 'emorg bridge',
+      url,
+      events: ['jira:issue_created', 'jira:issue_updated', 'comment_created'],
+      filters: { 'issue-related-events-section': `project in (${projectKeys.join(', ')})` },
+      excludeBody: false,
+    })) as Record<string, unknown>;
+    return String(raw.self ?? 'registered');
+  }
+
   async transitionTo(key: string, statusName: string): Promise<boolean> {
     const transitions = await this.getTransitions(key);
     const match = transitions.find((t) => t.toStatus.toLowerCase() === statusName.toLowerCase());

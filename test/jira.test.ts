@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Ctx } from '../src/ctx';
 import { Store } from '../src/db/store';
-import { handleJiraWebhook, isTriggered, parseCommentVerb, parseWebhookEvent } from '../src/jira/bridge';
+import { handleJiraWebhook, isTriggered, parseCommentVerb, parseWebhookEvent, secretMatches } from '../src/jira/bridge';
 import { JiraClient, type JiraIssue } from '../src/jira/client';
 import { initProject, type JiraConfig } from '../src/project';
 
@@ -197,5 +197,33 @@ describe('handleJiraWebhook', () => {
       comment: { body: '@emorg approve', author: { accountId: 'bot-account' } },
     }));
     expect(ownComment).toBe('ignored: own comment');
+  });
+});
+
+describe('secretMatches', () => {
+  it('accepts only exact matches and rejects empty inputs', () => {
+    expect(secretMatches('abc123', 'abc123')).toBe(true);
+    expect(secretMatches('abc123', 'abc124')).toBe(false);
+    expect(secretMatches('abc123', 'abc12')).toBe(false);
+    expect(secretMatches(undefined, 'abc123')).toBe(false);
+    expect(secretMatches('abc123', null)).toBe(false);
+    expect(secretMatches('', '')).toBe(false);
+  });
+});
+
+describe('registerWebhook', () => {
+  it('posts the dynamic webhook with secret url and project filter', async () => {
+    let captured: { url: string; body: Record<string, unknown> } | null = null;
+    const fetchImpl = (async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      captured = { url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> };
+      return new Response(JSON.stringify({ self: 'https://acme.atlassian.net/rest/webhooks/1.0/webhook/42' }), { status: 201 });
+    }) as typeof fetch;
+    const client = new JiraClient({ site: 'https://acme.atlassian.net', email: 'e', token: 't', fetchImpl });
+    const self = await client.registerWebhook('https://em.example.com/', ['PAY', 'OPS'], 's3cret');
+    expect(self).toContain('/webhook/42');
+    expect(captured!.url).toContain('/rest/webhooks/1.0/webhook');
+    expect(captured!.body.url).toBe('https://em.example.com/webhooks/jira?secret=s3cret');
+    expect(captured!.body.events).toContain('comment_created');
+    expect((captured!.body.filters as Record<string, string>)['issue-related-events-section']).toBe('project in (PAY, OPS)');
   });
 });

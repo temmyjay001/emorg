@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { Ctx } from '../ctx';
 import { firstBuildState } from '../domain/states';
 import type { Ticket } from '../domain/types';
@@ -7,6 +8,14 @@ import type { JiraClient, JiraIssue } from './client';
 
 export type Log = (msg: string) => void;
 const noop: Log = () => {};
+
+export function secretMatches(expected: string | undefined, provided: string | null): boolean {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export interface JiraWebhookEvent {
   kind: 'issue' | 'comment' | 'other';
