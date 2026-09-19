@@ -45,6 +45,7 @@ function ticketDetail(store: Store, ticket: Ticket, pipeline?: string[]): Record
     ticket.status === 'BLOCKED' && pipeline
       ? roleForState(pipeline, unblockTarget(pipeline, store.blockedFrom(ticket.id), ticket.branch !== null))
       : null;
+  const activeRun = store.activeRun(`ticket:${ticket.key}`);
   return {
     unblockRole,
     ...ticket,
@@ -55,13 +56,15 @@ function ticketDetail(store: Store, ticket: Ticket, pipeline?: string[]): Record
     costUsd: store.ticketCostUsd(ticket.id),
     leadTimeMs: ticketLeadTimeMs(ticket, transitions),
     agentTimeMs: store.ticketAgentTimeMs(ticket.id),
-    running: store.activeRun(`ticket:${ticket.key}`) !== undefined,
+    running: activeRun !== undefined,
+    runStartedAt: activeRun?.startedAt ?? null,
     interrupted: isTicketInterrupted(store, ticket.key),
     relations: store.getTicketRelations(ticket.id),
   };
 }
 
 function epicDetail(store: Store, epic: Epic): Record<string, unknown> {
+  const activeRun = store.activeRun(`epic:${epic.key}`);
   return {
     ...epic,
     subtickets: store.getSubtickets(epic.id),
@@ -69,7 +72,8 @@ function epicDetail(store: Store, epic: Epic): Record<string, unknown> {
     costUsd: store.epicCostUsd(epic.id),
     leadTimeMs: epicLeadTimeMs(epic),
     agentTimeMs: store.epicAgentTimeMs(epic.id),
-    running: store.activeRun(`epic:${epic.key}`) !== undefined,
+    running: activeRun !== undefined,
+    runStartedAt: activeRun?.startedAt ?? null,
   };
 }
 

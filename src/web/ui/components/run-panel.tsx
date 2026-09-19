@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Square } from 'lucide-react';
+import { RelativeTime } from '@/components/relative-time';
 import { Button } from '@/components/ui/button';
 import { cancelRun, logUrl } from '@/lib/api';
+import { parseUtc } from '@/lib/format';
 import type { RunEvent } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -15,14 +17,20 @@ interface RunPanelProps {
   // A stream to drive immediately (from a Run/Plan/Approve click), or null to
   // reattach to whatever run is already in progress via the log SSE endpoint.
   driver?: AsyncGenerator<RunEvent> | null;
+  // The run's actual start time (sqlite UTC), when known from the backend.
+  // Falls back to component-mount time for a freshly-launched driver, whose
+  // run row may not exist yet on the initial render.
+  startedAt?: string | null;
   onFinished: () => void;
 }
 
-export function RunPanel({ projectId, kind, target, driver, onFinished }: RunPanelProps) {
+export function RunPanel({ projectId, kind, target, driver, startedAt, onFinished }: RunPanelProps) {
   const [lines, setLines] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>('running');
   const [finalStatus, setFinalStatus] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
+  const [mountedAt] = useState(() => new Date());
+  const startedAtDate = startedAt ? parseUtc(startedAt) : mountedAt;
   const logRef = useRef<HTMLDivElement>(null);
   const finishedRef = useRef(onFinished);
   finishedRef.current = onFinished;
@@ -113,6 +121,7 @@ export function RunPanel({ projectId, kind, target, driver, onFinished }: RunPan
           ) : (
             <span className="text-muted-foreground">Finished{finalStatus ? `: ${finalStatus}` : ''}</span>
           )}
+          <RelativeTime date={startedAtDate} className="text-xs font-normal text-muted-foreground" />
         </div>
         {phase === 'running' ? (
           <Button variant="destructive" size="sm" onClick={stop} disabled={stopping}>

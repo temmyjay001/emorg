@@ -141,6 +141,7 @@ export function EpicView({ projectId, keyId }: { projectId: string; keyId: strin
               kind="epics"
               target={keyId}
               driver={panel === 'reattach' ? null : panel.driver}
+              startedAt={data.runStartedAt}
               onFinished={reload}
             />
           ) : null}

@@ -106,6 +106,7 @@ export interface TicketDetail extends Ticket {
   leadTimeMs: number | null;
   agentTimeMs: number;
   running: boolean;
+  runStartedAt: string | null;
   runCommand: string | null;
   appUrl: string | null;
   relations: TicketRelation[];
@@ -118,6 +119,7 @@ export interface EpicDetail extends Epic {
   leadTimeMs: number | null;
   agentTimeMs: number;
   running: boolean;
+  runStartedAt: string | null;
   feedback: string | null;
 }
 

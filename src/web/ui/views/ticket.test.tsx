@@ -276,6 +276,27 @@ describe('TicketView agent runs', () => {
   });
 });
 
+describe('TicketView history', () => {
+  it('shows each history entry as a relative time with the absolute local time as a tooltip', async () => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const createdAt = fiveMinutesAgo.toISOString().slice(0, 19).replace('T', ' ');
+    fetchTicketMock.mockResolvedValue(
+      draftTicket({
+        status: 'BACKLOG',
+        transitions: [
+          { id: 1, fromState: 'BACKLOG', toState: 'READY', role: 'pm', verdict: null, note: null, createdAt },
+        ],
+      }),
+    );
+    render(<TicketView projectId="p" keyId="T-1" />);
+    await screen.findByText('History');
+    const relative = screen.getByText(/^\d+m ago$/);
+    expect(relative.getAttribute('title')).toBeTruthy();
+    expect(relative.getAttribute('title')).not.toBe(relative.textContent);
+    expect(screen.queryByText(createdAt)).toBeNull();
+  });
+});
+
 describe('TicketView label editor', () => {
   it('displays all labels currently attached to the ticket', async () => {
     fetchTicketMock.mockResolvedValue(draftTicket({ status: 'BACKLOG', labels: ['backend', 'frontend'] }));

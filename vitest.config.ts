@@ -20,7 +20,7 @@ export default defineConfig({
         test: {
           name: 'ui',
           root: import.meta.dirname,
-          include: ['src/web/ui/**/*.test.tsx'],
+          include: ['src/web/ui/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
         },
       },

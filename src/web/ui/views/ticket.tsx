@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Check, Clock, Play, Plus, Send, X } from 'lucide-react';
 import { BackLink } from '@/components/back-link';
 import { ArtifactContent, evidenceMeta } from '@/components/artifact';
+import { RelativeTime } from '@/components/relative-time';
 import { RunPanel } from '@/components/run-panel';
 import { StatusBadge } from '@/components/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +30,7 @@ import {
   setTicketPriority,
   unblockTicket,
 } from '@/lib/api';
-import { duration, money, timestamp } from '@/lib/format';
+import { duration, money, parseUtc } from '@/lib/format';
 import { useChangeFeed, useResource } from '@/lib/hooks';
 import { projectHref } from '@/lib/router';
 import { PRIORITY_LEVELS, stateLabel, ticketTone } from '@/lib/status';
@@ -820,6 +821,7 @@ export function TicketView({ projectId, keyId }: { projectId: string; keyId: str
                   kind="tickets"
                   target={keyId}
                   driver={panel === 'reattach' ? null : panel.driver}
+                  startedAt={data.runStartedAt}
                   onFinished={reload}
                 />
               ) : null}
@@ -867,7 +869,10 @@ export function TicketView({ projectId, keyId }: { projectId: string; keyId: str
                               {t.verdict}
                             </span>
                           ) : null}
-                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">{timestamp(t.createdAt)}</span>
+                          <RelativeTime
+                            date={parseUtc(t.createdAt)}
+                            className="ml-auto shrink-0 text-xs text-muted-foreground"
+                          />
                         </div>
                         {t.note ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t.note}</p> : null}
                       </div>
