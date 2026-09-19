@@ -9,7 +9,7 @@
   "maxParallelSubtickets": 2,
   "maxConcurrentAgents": 2,
   "maxAttempts": 3,
-  "maxTicketBudgetUsd": 20,
+  "maxTicketBudgetUsd": 12,
   "monthlyBudgetUsd": 100,
   "meetingModel": "claude-sonnet-5",
   "meetingMaxTurns": null,
