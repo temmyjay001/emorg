@@ -4,3 +4,4 @@ data/
 .env
 *.log
 src/web/assets/
+docs/private/
