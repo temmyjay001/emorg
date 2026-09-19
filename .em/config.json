@@ -50,7 +50,10 @@
       "maxTurns": 40
     },
     "uat": {
-      "model": "claude-sonnet-5",
+      "escalation": [
+        "claude-haiku-4-5",
+        "claude-sonnet-5"
+      ],
       "maxTurns": 150
     }
   },
