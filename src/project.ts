@@ -42,8 +42,21 @@ const cliRunnerSpecSchema = z.strictObject({
   env: z.record(z.string(), z.string()).default({}),
 });
 
+const jiraConfigSchema = z.strictObject({
+  site: z.string().min(1),
+  email: z.string().min(1),
+  tokenEnv: z.string().min(1).default('JIRA_API_TOKEN'),
+  webhookSecretEnv: z.string().min(1).default('JIRA_WEBHOOK_SECRET'),
+  projectKeys: z.array(z.string().regex(/^[A-Z][A-Z0-9]*$/)).min(1),
+  triggerLabel: z.string().min(1).default('emorg'),
+  triggerAccountId: z.string().nullable().default(null),
+  statusMap: z.record(z.string(), z.string()).default({}),
+  evidenceUpload: z.boolean().default(true),
+});
+
 const configSchema = z
   .strictObject({
+    jira: jiraConfigSchema.nullable().default(null),
     runCommand: z.string().nullable().default(null),
     appUrl: z.string().nullable().default(null),
     verifyCommand: z.string().nullable().default(null),
@@ -189,7 +202,10 @@ export function openProject(from = process.cwd()): Project {
   return projectAt(root);
 }
 
+export type JiraConfig = z.infer<typeof jiraConfigSchema>;
+
 const DEFAULT_CONFIG_FILE = {
+  jira: null,
   runCommand: null,
   appUrl: null,
   verifyCommand: null,

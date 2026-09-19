@@ -56,6 +56,7 @@ export interface Ticket {
   branch: string | null;
   baseSha: string | null;
   mergedSha: string | null;
+  jiraKey: string | null;
   hasUi: boolean;
   runCommand: string | null;
   appUrl: string | null;

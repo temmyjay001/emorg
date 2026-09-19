@@ -183,6 +183,10 @@ CREATE TABLE IF NOT EXISTS ticket_relations (
 );
 CREATE INDEX IF NOT EXISTS idx_ticket_relations_ticket ON ticket_relations(ticket_id, id);
 ` },
+  { name: 'ticket-jira-key', sql: `
+ALTER TABLE tickets ADD COLUMN jira_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_jira_key ON tickets(jira_key) WHERE jira_key IS NOT NULL;
+` },
 ];
 
 export function createSchema(db: Database.Database): void {

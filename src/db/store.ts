@@ -52,6 +52,7 @@ interface TicketRow {
   branch: string | null;
   base_sha: string | null;
   merged_sha: string | null;
+  jira_key: string | null;
   has_ui: number;
   run_command: string | null;
   app_url: string | null;
@@ -163,6 +164,7 @@ const toTicket = (r: TicketRow): Ticket => ({
   branch: r.branch,
   baseSha: r.base_sha,
   mergedSha: r.merged_sha,
+  jiraKey: r.jira_key,
   hasUi: !!r.has_ui,
   runCommand: r.run_command,
   appUrl: r.app_url,
@@ -397,11 +399,12 @@ export class Store {
     dependsOn?: number[];
     priority?: string;
     labels?: string[];
+    jiraKey?: string;
   }): Ticket {
     const create = this.db.transaction(() => {
       const info = this.db
         .prepare(
-          `INSERT INTO tickets (key, title, description, epic_id, seq, depends_on, priority, labels) VALUES ('', ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO tickets (key, title, description, epic_id, seq, depends_on, priority, labels, jira_key) VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.title,
@@ -411,6 +414,7 @@ export class Store {
           input.dependsOn?.length ? JSON.stringify(input.dependsOn) : null,
           input.priority ?? 'medium',
           JSON.stringify(input.labels ?? []),
+          input.jiraKey ?? null,
         );
       const id = Number(info.lastInsertRowid);
       this.db.prepare(`UPDATE tickets SET key = ? WHERE id = ?`).run(`${this.ticketPrefix}-${id}`, id);
@@ -433,6 +437,11 @@ export class Store {
 
   getTicketById(id: number): Ticket | undefined {
     const row = this.db.prepare(`SELECT * FROM tickets WHERE id = ?`).get(id) as TicketRow | undefined;
+    return row ? toTicket(row) : undefined;
+  }
+
+  getTicketByJiraKey(jiraKey: string): Ticket | undefined {
+    const row = this.db.prepare(`SELECT * FROM tickets WHERE jira_key = ?`).get(jiraKey) as TicketRow | undefined;
     return row ? toTicket(row) : undefined;
   }
 
