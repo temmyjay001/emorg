@@ -74,12 +74,14 @@ afterEach(() => {
 });
 
 describe('stepOnce idle-timeout handling', () => {
-  it('treats an AgentIdleTimeoutError like a gate FAIL: transitions back to IN_PROGRESS, increments attempt, and notes the timeout', async () => {
+  it('treats a repeated AgentIdleTimeoutError like a gate FAIL after one automatic retry: transitions back to IN_PROGRESS, increments attempt once, and notes the timeout', async () => {
     const ticket = inReviewTicket();
     runReviewer.mockRejectedValue(new AgentIdleTimeoutError(15));
 
-    const step = await stepOnce(ctx, ticket.id);
+    const logs: string[] = [];
+    const step = await stepOnce(ctx, ticket.id, (msg) => logs.push(msg));
 
+    expect(runReviewer).toHaveBeenCalledTimes(2);
     expect(step.moved).toBe(true);
     expect(step.done).toBe(false);
     expect(step.ticket.status).toBe('IN_PROGRESS');
@@ -87,38 +89,78 @@ describe('stepOnce idle-timeout handling', () => {
     const last = store.listTransitions(ticket.id).at(-1);
     expect(last?.verdict).toBe('FAIL');
     expect(last?.note).toContain('idle timeout');
+    expect(logs.some((l) => l.includes('reviewer') && l.includes('idle-timed out') && l.includes('retry'))).toBe(true);
   });
 
-  it('blocks the ticket once max attempts are exhausted by repeated idle timeouts', async () => {
+  it('blocks the ticket once max attempts are exhausted by repeated idle timeouts, after its one automatic retry', async () => {
     const ticket = inReviewTicket(1);
     ctx.project.config = { ...ctx.project.config, maxAttempts: 1 };
     runReviewer.mockRejectedValue(new AgentIdleTimeoutError(15));
 
     const step = await stepOnce(ctx, ticket.id);
 
+    expect(runReviewer).toHaveBeenCalledTimes(2);
     expect(step.ticket.status).toBe('BLOCKED');
     expect(step.done).toBe(true);
     const last = store.listTransitions(ticket.id).at(-1);
     expect(last?.note).toContain('idle timeout');
   });
 
-  it('blocks the ticket immediately when the developer role itself idles out, same as any developer FAIL', async () => {
+  it('blocks the ticket once the developer role idles out twice in a row (original attempt plus its one automatic retry)', async () => {
     const ticket = readyTicket();
     runDeveloper.mockRejectedValue(new AgentIdleTimeoutError(15));
 
     const step = await stepOnce(ctx, ticket.id);
 
+    expect(runDeveloper).toHaveBeenCalledTimes(2);
     expect(step.ticket.status).toBe('BLOCKED');
     const last = store.listTransitions(ticket.id).at(-1);
     expect(last?.verdict).toBe('FAIL');
     expect(last?.note).toContain('idle timeout');
   });
 
-  it('still propagates non-idle agent failures instead of swallowing them', async () => {
+  it('automatically retries once and advances normally when the developer retry passes, without ever blocking or noting a failure', async () => {
+    const ticket = readyTicket();
+    writeFileSync(join(worktreePath(ctx.project, ticket.key), 'feature.txt'), 'work\n');
+    runDeveloper.mockRejectedValueOnce(new AgentIdleTimeoutError(15));
+    runDeveloper.mockResolvedValueOnce({ verdict: 'PASS', summary: 'implemented the feature' });
+
+    const logs: string[] = [];
+    const step = await stepOnce(ctx, ticket.id, (msg) => logs.push(msg));
+
+    expect(runDeveloper).toHaveBeenCalledTimes(2);
+    expect(step.ticket.status).toBe('IN_REVIEW');
+    expect(logs.some((l) => l.includes('developer') && l.includes('idle-timed out') && l.includes('retry'))).toBe(true);
+    const transitions = store.listTransitions(ticket.id);
+    expect(transitions.some((t) => t.toState === 'BLOCKED')).toBe(false);
+    const last = transitions.at(-1);
+    expect(last?.verdict).toBe('PASS');
+    expect(last?.note).not.toContain('idle timeout');
+  });
+
+  it('automatically retries once and advances normally when the reviewer retry passes, without consuming a maxAttempts attempt', async () => {
+    const ticket = inReviewTicket();
+    runReviewer.mockRejectedValueOnce(new AgentIdleTimeoutError(15));
+    runReviewer.mockResolvedValueOnce({ verdict: 'PASS', summary: 'looks good' });
+
+    const step = await stepOnce(ctx, ticket.id);
+
+    expect(runReviewer).toHaveBeenCalledTimes(2);
+    expect(step.ticket.status).not.toBe('BLOCKED');
+    expect(step.ticket.attempt).toBe(0);
+    const transitions = store.listTransitions(ticket.id);
+    expect(transitions.some((t) => t.toState === 'BLOCKED')).toBe(false);
+    const last = transitions.at(-1);
+    expect(last?.verdict).toBe('PASS');
+    expect(last?.note).not.toContain('idle timeout');
+  });
+
+  it('still propagates non-idle agent failures instead of swallowing them, without any automatic retry', async () => {
     const ticket = readyTicket();
     runDeveloper.mockRejectedValue(new Error('boom'));
 
     await expect(stepOnce(ctx, ticket.id)).rejects.toThrow('boom');
+    expect(runDeveloper).toHaveBeenCalledTimes(1);
     expect(store.getTicketById(ticket.id)?.status).toBe('READY');
   });
 });

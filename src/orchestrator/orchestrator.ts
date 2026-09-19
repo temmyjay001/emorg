@@ -231,14 +231,22 @@ export async function stepOnce(
   log(`${ticket.key} ${ticket.status}: running ${stage.role}`);
   const activity = (line: string) => log(`${ticket.key}   ${line}`);
   const builtin: RoleRunner | undefined = (RUNNERS as Record<string, RoleRunner>)[stage.role];
+  const runGateOnce = (): Promise<GateResult> =>
+    builtin
+      ? builtin(ctx, ticket, control.signal, activity)
+      : runCustomGate(ctx, ticket, stage.role, control.signal, activity);
   let result: GateResult;
   try {
-    result = builtin
-      ? await builtin(ctx, ticket, control.signal, activity)
-      : await runCustomGate(ctx, ticket, stage.role, control.signal, activity);
+    result = await runGateOnce();
   } catch (err) {
     if (!(err instanceof AgentIdleTimeoutError)) throw err;
-    result = { verdict: 'FAIL', summary: err.message };
+    log(`${ticket.key} ${stage.role} idle-timed out; automatically retrying ${stage.role} once before failing`);
+    try {
+      result = await runGateOnce();
+    } catch (retryErr) {
+      if (!(retryErr instanceof AgentIdleTimeoutError)) throw retryErr;
+      result = { verdict: 'FAIL', summary: retryErr.message };
+    }
   }
 
   if (result.artifact) {
