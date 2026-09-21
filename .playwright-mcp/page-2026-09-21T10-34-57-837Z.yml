@@ -1,0 +1,10 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]: emorg
+    - generic [ref=e5]: 0.1.0-beta.1
+  - generic [ref=e6]:
+    - generic [ref=e7]: An engineering orgthat runs on your laptop.
+    - generic [ref=e8]: Five gated AI agents. Isolated sessions. A landing queue where DONE cannot lie.
+  - generic [ref=e9]:
+    - generic [ref=e10]: npm install -g emorg
+    - generic [ref=e11]: emorg built emorg · 229,806,918 tokens
